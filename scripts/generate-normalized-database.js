@@ -141,8 +141,7 @@ function joinNCData(data, target) {
 // from gpus with similar benchmarks from other vendors
 function generatePerformanceScore(database) {
 
-	// find all benchmark information with
-	// passmark results
+	// find all benchmark information with passmark results
 	const benchmarks = Object
 		.values(database)
 		.map(gpu => gpu.benchmarks)
@@ -155,17 +154,35 @@ function generatePerformanceScore(database) {
 		const gpu = database[name];
 		const benchmarks = gpu.benchmarks;
 
-		for(const b in benchmarks) {
+		for(const benchmarkName in benchmarks) {
 
-			if (b === 'passmark' || b === 'passmark2d') continue;
+			// skip incrementing passmark scores because we treat passmark as the
+			// primary score comparison.
+			if (benchmarkName === 'passmark' || benchmarkName === 'passmark2d') {
 
-			if(!(b in benchCount)) benchCount[b] = 0;
-			if (benchmarks[b] && benchmarks['passmark']) benchCount[b] ++;
+				continue;
+
+			}
+
+			// initialize the number of gpus that have benchmark data with this benchmark as 0
+			if(!(benchmarkName in benchCount)) {
+
+				benchCount[benchmarkName] = 0;
+
+			}
+
+			// increment the benchmark count if we see it has a sibling passmark score
+			if (benchmarks[benchmarkName] && benchmarks['passmark']) {
+
+				benchCount[benchmarkName] ++;
+
+			}
 
 		}
 
 	}
 
+	// Sort the benchmark names with the most preferred first
 	const benchPref = Object
 		.entries(benchCount)
 		.sort((a, b) => b[1] - a[1])
@@ -175,23 +192,28 @@ function generatePerformanceScore(database) {
 
 		const gpu = database[name];
 		let score = null;
+
+		// if a gpu has a passmark score just use that
 		if (gpu.benchmarks.passmark) {
 
 			score = gpu.benchmarks.passmark;
 
 		} else {
 
+			// find the best benchmark from the preferred that this gpu
+			// has data for
 			const benchType = benchPref.filter(b => !!gpu.benchmarks[b])[0];
 			if (benchType) {
 
-				// get an array to interpolate across
+				// get an array of gpus that have have both the passmark data and
+				// performance data for benchType.
 				const interpolationArray = benchmarks
 					.filter(b => !!b[benchType])
 					.sort((a, b) => a[benchType] - b[benchType]);
 
-
 				// TODO: It might be best to gather many scores and weight
-				// the associated passmark scores when generating a new one
+				// the associated passmark scores when generating a new one.
+				// Only two GPUs that have a comparable benchmark type are used here.
 				const thisRank = gpu.benchmarks[benchType];
 				for (let i = 0; i < interpolationArray.length - 1; i++) {
 
@@ -201,13 +223,18 @@ function generatePerformanceScore(database) {
 					const currbt = curr[benchType];
 					const nextbt = next[benchType];
 
+					// iterate up until we find scores that are strictly higher than our score
 					if (thisRank < currbt) continue;
 
 					const currp = curr.passmark;
 					const nextp = next.passmark;
 
+					// find how far between this and the next score this value is
 					const ratio = (thisRank - currbt) / (nextbt - currbt);
 
+					// if the passmark scores are in order (currp is less than nextp),
+					// then interpolate as expect. Otherwise reverse the interpolation.
+					// TODO: this is redundant...
 					if (currp < nextp) {
 						score = currp + (nextp - currp) * ratio;
 					} else {
